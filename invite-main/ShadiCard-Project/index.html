@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#32030B">
+  <title>Royal Wedding Invitation</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Great+Vibes&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet">
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden !important;
+      position: fixed;
+      touch-action: none;
+      -webkit-touch-callout: none;
+      user-select: none;
+      background-color: #140105;
+      font-family: 'Cormorant Garamond', Georgia, serif;
+    }
+
+    #app-mount {
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      position: relative;
+    }
+
+    #luxury-loader {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: radial-gradient(circle at 50% 30%, #3a040d 0%, #120104 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.5s;
+    }
+
+    .loader-ring {
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      border: 1px solid rgba(212, 175, 55, 0.2);
+      border-top: 2px solid #D4AF37;
+      border-bottom: 2px solid #ECC880;
+      animation: royalSpin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+    }
+
+    .loader-text {
+      margin-top: 18px;
+      font-family: 'Cinzel', serif;
+      font-size: 10px;
+      letter-spacing: 4px;
+      color: #ECC880;
+      text-transform: uppercase;
+    }
+
+    @keyframes royalSpin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="luxury-loader">
+    <div class="loader-ring"></div>
+    <div class="loader-text">Summoning The Royal Suite</div>
+  </div>
+
+  <main id="app-mount"></main>
+
+  <script type="module">
+    import { fetchWeddingBySlug } from './api.js';
+
+    function removeLoader() {
+      const loader = document.getElementById('luxury-loader');
+      if (loader) {
+        loader.style.opacity = '0';
+        setTimeout(() => loader.remove(), 500);
+      }
+    }
+
+    function showPageError(message) {
+      const mount = document.getElementById('app-mount');
+      mount.innerHTML = `
+        <section role="alert" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center;color:#ECC880;background:#140105;font-family:Georgia,serif">
+          <h1 style="font-family:Georgia,serif">Invitation unavailable</h1>
+          <p></p>
+          <button type="button" style="padding:12px 22px;border:1px solid #D4AF37;border-radius:24px;background:#3a040d;color:#ECC880;font:inherit">Try again</button>
+        </section>`;
+      mount.querySelector('p').textContent = message;
+      mount.querySelector('button').addEventListener('click', () => location.reload());
+    }
+
+    function normalizeGuestData(searchParams) {
+      const rawGuest = searchParams.get('g');
+      const rawPerson = parseInt(searchParams.get('p') || '1', 10);
+      const isFamilyFlag = searchParams.get('f') === '1';
+
+      const guestName = rawGuest
+        ? rawGuest.replace(/\+/g, ' ').trim().split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+        : 'Respected Guest';
+
+      const validPersons = isNaN(rawPerson) || rawPerson < 1 ? 1 : rawPerson;
+
+      return {
+        name: guestName,
+        with_family: isFamilyFlag,
+        persons: validPersons,
+        person_display: isFamilyFlag ? '—' : String(validPersons),
+        family_display: isFamilyFlag ? '✓' : '✕'
+      };
+    }
+
+    async function bootstrap() {
+      const p = new URLSearchParams(window.location.search);
+      const rawSlug = (p.get('w') || '').trim().replace(/\/+$/, '');
+
+      const guest = normalizeGuestData(p);
+
+      try {
+        const weddingPayload = await fetchWeddingBySlug(rawSlug);
+        const templateId = String(weddingPayload.wedding.template_id || 'template-02').trim();
+        if (!['template-01', 'template-02', 'template-03', 'template-04'].includes(templateId)) {
+          throw new Error('This invitation is configured with an unsupported design.');
+        }
+
+        const module = await import(`./templates/${templateId}.js`);
+
+        const mount = document.getElementById('app-mount');
+        mount.innerHTML = module.default({
+          guest,
+          wedding: weddingPayload.wedding,
+          events: weddingPayload.events || []
+        });
+
+        if (typeof module.mount === 'function') {
+          module.mount(mount, {
+            guest,
+            wedding: weddingPayload.wedding,
+            events: weddingPayload.events || []
+          });
+        }
+      } catch (err) {
+        console.error('Invitation loading error:', err);
+        showPageError(err.message || 'We could not load this invitation. Please try again.');
+      } finally {
+        removeLoader();
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', bootstrap);
+  </script>
+</body>
+</html>
